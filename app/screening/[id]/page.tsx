@@ -31,16 +31,22 @@ export default function ScreeningPage() {
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [selectedTickets, setSelectedTickets] = useState(1);
 
+  // Check if Convex client is available
+  const isConvexAvailable = typeof window !== 'undefined' && process.env.NEXT_PUBLIC_CONVEX_URL;
+
   const isPastScreening = screening && new Date(screening.date) < new Date();
   const totalBooked = bookings?.reduce((sum, booking) => sum + booking.numberOfTickets, 0) || 0;
   const availableSeats = (screening?.maxSeats || 0) - totalBooked;
 
-  if (!screening || !movie) {
+  // Show loading state if Convex is not available or data is loading
+  if (!isConvexAvailable || !screening || !movie) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading screening details...</p>
+          <p className="text-gray-600">
+            {!isConvexAvailable ? "Initializing..." : "Loading screening details..."}
+          </p>
         </div>
       </div>
     );

@@ -186,6 +186,12 @@ The modular structure makes it easy to add new features:
    - Reinstall dependencies: `npm install`
    - Check TypeScript errors: `npm run build`
 
+4. **"No address provided to ConvexReactClient" error during build**
+   - This is a known issue with static generation and Convex
+   - The app has been configured to handle this gracefully
+   - Ensure `NEXT_PUBLIC_CONVEX_URL` is set in your environment variables
+   - For production deployment, make sure the environment variable is set in your hosting platform
+
 ### Getting Help
 
 - Check the [Convex documentation](https://docs.convex.dev/)
