@@ -1,0 +1,74 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Movie {
+  id          String      @id @default(cuid())
+  title       String
+  description String
+  director    String?
+  year        Int?
+  duration    Int? // in minutes
+  genre       String?
+  posterUrl   String?
+  trailerUrl  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  screenings  Screening[]
+  images      MovieImage[]
+}
+
+model Screening {
+  id          String    @id @default(cuid())
+  movieId     String
+  movie       Movie     @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  date        DateTime
+  time        String
+  venue       String
+  location    String
+  ticketPrice Float
+  maxSeats    Int       @default(50)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  bookings    Booking[]
+}
+
+model Booking {
+  id          String    @id @default(cuid())
+  screeningId String
+  screening   Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  customerName String
+  customerEmail String?
+  customerPhone String?
+  numberOfTickets Int
+  totalAmount Float
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentId   String?
+  bookingDate DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MovieImage {
+  id        String @id @default(cuid())
+  movieId   String
+  movie     Movie  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  imageUrl  String
+  caption   String?
+  createdAt DateTime @default(now())
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
