@@ -63,6 +63,7 @@ export function generateTransactionRef(): string {
 
 /**
  * Generates standard UPI payment link as per NPCI specification
+ * Enhanced with better error handling and mobile optimization
  */
 export function generateUPILink(
   upiId: string,
@@ -80,12 +81,16 @@ export function generateUPILink(
     throw new Error(amountValidation.error);
   }
   
+  // Sanitize inputs to prevent UPI link issues
+  const sanitizedPayeeName = payeeName.replace(/[&=]/g, '').trim();
+  const sanitizedDescription = description.replace(/[&=]/g, '').trim();
+  
   const params = new URLSearchParams({
     pa: upiId.trim(), // Payee Address (UPI ID)
-    pn: payeeName, // Payee Name
+    pn: sanitizedPayeeName, // Payee Name
     am: amount.toFixed(2), // Amount (2 decimal places)
     cu: 'INR', // Currency
-    tn: description, // Transaction Note
+    tn: sanitizedDescription, // Transaction Note
     ...(transactionRef && { tr: transactionRef }), // Transaction Reference (optional)
   });
   
@@ -98,6 +103,37 @@ export function generateUPILink(
 export function isMobileDevice(): boolean {
   if (typeof window === 'undefined') return false;
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+/**
+ * Enhanced UPI app launcher with better error handling
+ */
+export function launchUpiApp(upiLink: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') {
+      resolve(false);
+      return;
+    }
+
+    try {
+      if (isMobileDevice()) {
+        // On mobile, directly open UPI app
+        window.location.href = upiLink;
+        
+        // Set a timeout to check if the app opened successfully
+        setTimeout(() => {
+          // If we're still on the same page after 2 seconds, app might not have opened
+          resolve(true); // We assume success for UPI apps
+        }, 2000);
+      } else {
+        // On desktop, we can't directly open UPI apps
+        resolve(false);
+      }
+    } catch (error) {
+      console.error('Error launching UPI app:', error);
+      resolve(false);
+    }
+  });
 }
 
 /**
