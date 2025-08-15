@@ -5,29 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { 
-  Loader2, 
-  CreditCard, 
-  CheckCircle, 
-  XCircle, 
-  AlertTriangle,
-  RefreshCw,
-  Info,
-  Shield
-} from "lucide-react";
-import { 
-  validateUpiId, 
-  validatePaymentAmount, 
-  generateUpiLink, 
-  handlePaymentError, 
-  formatCurrency,
+import { Loader2, CreditCard, CheckCircle, XCircle, QrCode, Smartphone, Monitor, Copy } from "lucide-react";
+import {
+  validateUpiId,
+  validateAmount,
+  generateUPILink,
   generateTransactionRef,
-  isAmountWithinLimits,
-  PAYMENT_ERRORS,
-  type PaymentError,
-  type UpiPaymentData
-} from "@/lib/payment-utils";
+  isMobileDevice,
+  UPI_ERROR_MESSAGES,
+  getUpiPspInfo
+} from "@/lib/upi-utils";
 
 interface PaymentHandlerProps {
   amount: number;
@@ -35,192 +24,144 @@ interface PaymentHandlerProps {
   onSuccess: () => void;
   onCancel: () => void;
   upiId?: string;
-  bookingId?: string;
 }
-
-
 
 export function PaymentHandler({ 
   amount, 
   movieTitle, 
   onSuccess, 
   onCancel, 
-  upiId = "your-upi-id@bank",
-  bookingId
+  upiId = "tanvishdesai.05@oksbi" 
 }: PaymentHandlerProps) {
-  const [paymentStatus, setPaymentStatus] = useState<"pending" | "processing" | "success" | "failed" | "verifying">("pending");
+  const [paymentStatus, setPaymentStatus] = useState<"pending" | "processing" | "success" | "failed">("pending");
   const [customUpiId, setCustomUpiId] = useState(upiId);
   const [showCustomUpi, setShowCustomUpi] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const [currentError, setCurrentError] = useState<PaymentError | null>(null);
-  const [verificationAttempts, setVerificationAttempts] = useState(0);
-  const [paymentStartTime, setPaymentStartTime] = useState<number | null>(null);
+  const [showQRDialog, setShowQRDialog] = useState(false);
+  const [transactionRef] = useState(() => generateTransactionRef());
+  const [isMobile, setIsMobile] = useState(false);
+  const [upiValidationError, setUpiValidationError] = useState<string>("");
 
-  const MAX_RETRIES = 3;
-  const VERIFICATION_TIMEOUT = 300000; // 5 minutes
-  const VERIFICATION_INTERVAL = 10000; // 10 seconds
+  useEffect(() => {
+    setIsMobile(isMobileDevice());
+  }, []);
 
-  // Handle payment with proper error handling
+  // Validate UPI ID on change
+  useEffect(() => {
+    if (customUpiId && !validateUpiId(customUpiId)) {
+      setUpiValidationError(UPI_ERROR_MESSAGES.INVALID_UPI_ID);
+    } else {
+      setUpiValidationError("");
+    }
+  }, [customUpiId]);
+
   const handlePayment = async () => {
+    // Validate amount
+    const amountValidation = validateAmount(amount);
+    if (!amountValidation.isValid) {
+      toast.error(amountValidation.error || "Invalid amount");
+      return;
+    }
+
+    // Validate UPI ID
     if (!validateUpiId(customUpiId)) {
-      setCurrentError(PAYMENT_ERRORS.INVALID_UPI);
-      setPaymentStatus("failed");
+      toast.error(UPI_ERROR_MESSAGES.INVALID_UPI_ID);
+      setUpiValidationError(UPI_ERROR_MESSAGES.INVALID_UPI_ID);
       return;
     }
 
     setPaymentStatus("processing");
-    setCurrentError(null);
-    setPaymentStartTime(Date.now());
-    setRetryCount(prev => prev + 1);
-
+    
     try {
-      // Validate payment amount
-      const amountValidation = isAmountWithinLimits(amount);
-      if (!amountValidation.valid) {
-        setCurrentError(PAYMENT_ERRORS.INVALID_AMOUNT);
-        setPaymentStatus("failed");
-        return;
-      }
-
-      // Generate UPI payment data
-      const paymentData: UpiPaymentData = {
-        payeeUpiId: customUpiId,
-        payeeName: "Compere Cinema",
-        amount: amount,
-        transactionNote: `Booking for ${movieTitle}`,
-        currency: "INR",
-        merchantCode: "5411", // Entertainment category
-        transactionRef: bookingId || generateTransactionRef("BK")
-      };
-
-      // Generate UPI deep link
-      const upiLink = generateUpiLink(paymentData);
+      const upiLink = generateUPILink(
+        customUpiId,
+        amount,
+        "Compere Movies",
+        `${movieTitle} - Movie Booking`,
+        transactionRef
+      );
       
-      // Try to open UPI app
-      const opened = window.open(upiLink, '_blank');
-      
-      if (!opened) {
-        // Fallback for mobile devices
+      if (isMobile) {
+        // Mobile: Direct UPI app opening
         window.location.href = upiLink;
+        
+        const pspInfo = getUpiPspInfo(customUpiId);
+        const appName = pspInfo ? pspInfo.name : "UPI app";
+        
+        toast.info(`${appName} should open automatically. Complete payment and return here.`, {
+          duration: 15000,
+        });
+      } else {
+        // Desktop: Show QR code
+        setShowQRDialog(true);
+        
+        toast.info("Scan the QR code with any UPI app or use manual payment details.", {
+          duration: 10000,
+        });
       }
-
-      // Show instructions to user
-      toast.info("UPI app opened! Please complete the payment and return here.", {
-        duration: 15000,
-      });
-
-      // Start verification process
-      startPaymentVerification();
       
     } catch (error) {
-      console.error("Payment initiation error:", error);
-      setCurrentError(PAYMENT_ERRORS.NETWORK_ERROR);
+      console.error("Payment error:", error);
       setPaymentStatus("failed");
+      
+      // Show specific error message
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error(UPI_ERROR_MESSAGES.TRANSACTION_FAILED);
+      }
     }
   };
 
-  // Start payment verification process
-  const startPaymentVerification = () => {
-    const verificationTimer = setInterval(() => {
-      setVerificationAttempts(prev => {
-        const newAttempts = prev + 1;
-        
-        // Check if verification timeout reached
-        if (paymentStartTime && (Date.now() - paymentStartTime) > VERIFICATION_TIMEOUT) {
-          clearInterval(verificationTimer);
-          handlePaymentError(PAYMENT_ERRORS.TIMEOUT);
-          return newAttempts;
-        }
-
-        // Simulate verification check (in real implementation, check with backend)
-        if (newAttempts >= 6) { // 1 minute of attempts
-          clearInterval(verificationTimer);
-          // For demo, we'll assume payment is pending verification
-          setPaymentStatus("verifying");
-        }
-
-        return newAttempts;
-      });
-    }, VERIFICATION_INTERVAL);
-  };
-
-  // Handle payment errors
-  const handlePaymentError = (error: PaymentError) => {
-    setCurrentError(error);
-    setPaymentStatus("failed");
-    
-    // Show specific error message
-    if (error.type === "BANK_LIMIT") {
-      toast.error("Bank limit exceeded. Please try with a smaller amount or different payment method.", {
-        duration: 8000,
-      });
-    } else {
-      toast.error(error.message, {
-        duration: 5000,
-      });
-    }
-  };
-
-  // Handle manual verification
   const handleManualVerification = () => {
-    setPaymentStatus("verifying");
-    toast.info("Verifying payment...", {
-      duration: 3000,
-    });
-
-    // Simulate verification process
+    setPaymentStatus("success");
+    setShowQRDialog(false);
+    toast.success("Payment verified! Your booking is confirmed.");
     setTimeout(() => {
-      setPaymentStatus("success");
-      toast.success("Payment verified! Your booking is confirmed.");
-      setTimeout(() => {
-        onSuccess();
-      }, 2000);
-    }, 3000);
+      onSuccess();
+    }, 2000);
   };
 
-  // Handle retry with different amount (for bank limit errors)
-  const handleRetryWithSmallerAmount = () => {
-    const smallerAmount = Math.ceil(amount / 2);
-    toast.info(`Retrying with ₹${smallerAmount} (split payment)`, {
-      duration: 5000,
-    });
-    
-    // In a real implementation, you'd create a new booking with the smaller amount
-    // For now, we'll just retry with the same amount
+  const handleRetryPayment = () => {
     setPaymentStatus("pending");
-    setCurrentError(null);
-    setRetryCount(0);
+    setShowQRDialog(false);
   };
 
-  // Handle retry
-  const handleRetry = () => {
-    if (retryCount >= MAX_RETRIES) {
-      toast.error("Maximum retry attempts reached. Please contact support.");
-      return;
+  const copyUpiLink = async () => {
+    try {
+      const upiLink = generateUPILink(
+        customUpiId,
+        amount,
+        "Compere Movies",
+        `${movieTitle} - Movie Booking`,
+        transactionRef
+      );
+      
+      await navigator.clipboard.writeText(upiLink);
+      toast.success("UPI link copied to clipboard!");
+    } catch (error) {
+      console.error("Copy error:", error);
+      toast.error("Failed to copy UPI link");
     }
-    
-    setPaymentStatus("pending");
-    setCurrentError(null);
-    setVerificationAttempts(0);
-    setPaymentStartTime(null);
   };
 
-  // Success state
+  const copyTransactionDetails = async () => {
+    const details = `UPI ID: ${customUpiId}\nAmount: ₹${amount}\nReference: ${transactionRef}\nDescription: ${movieTitle} - Movie Booking`;
+    
+    try {
+      await navigator.clipboard.writeText(details);
+      toast.success("Payment details copied to clipboard!");
+    } catch (error) {
+      toast.error("Failed to copy payment details");
+    }
+  };
+
   if (paymentStatus === "success") {
     return (
-      <Card className="text-center border-green-200">
+      <Card className="text-center">
         <CardContent className="pt-6">
           <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-green-600 mb-2">Payment Successful!</h3>
           <p className="text-gray-600 mb-4">Your booking has been confirmed.</p>
-          <div className="bg-green-50 p-3 rounded-lg mb-4">
-            <p className="text-sm text-green-700">
-              <strong>Booking ID:</strong> {bookingId || `BK${Date.now()}`}
-            </p>
-            <p className="text-sm text-green-700">
-              <strong>Amount:</strong> {formatCurrency(amount)}
-            </p>
-          </div>
           <Button onClick={onSuccess} className="bg-green-600 hover:bg-green-700">
             Continue
           </Button>
@@ -229,205 +170,276 @@ export function PaymentHandler({
     );
   }
 
-  // Failed state with detailed error handling
   if (paymentStatus === "failed") {
     return (
-      <Card className="text-center border-red-200">
+      <Card className="text-center">
         <CardContent className="pt-6">
           <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-red-600 mb-2">Payment Failed</h3>
-          
-          {currentError && (
-            <div className="bg-red-50 p-4 rounded-lg mb-4 text-left">
-              <div className="flex items-start">
-                <AlertTriangle className="h-5 w-5 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-red-700 font-medium mb-1">{currentError.message}</p>
-                  {currentError.suggestedAction && (
-                    <p className="text-red-600 text-sm">{currentError.suggestedAction}</p>
-                  )}
-                </div>
+          <p className="text-gray-600 mb-4">Please check your details and try again, or contact support.</p>
+          <div className="text-xs text-gray-500 mb-4">
+            <p className="font-medium mb-2">Common issues & solutions:</p>
+            <ul className="list-disc list-inside text-left space-y-1">
+              <li><span className="font-medium">Invalid UPI ID:</span> Check format (user@paytm)</li>
+              <li><span className="font-medium">Bank limits:</span> Try smaller amount or check daily limits</li>
+              <li><span className="font-medium">Network issues:</span> Check internet connection</li>
+              <li><span className="font-medium">UPI app:</span> Install/update GPay, PhonePe, Paytm, etc.</li>
+              <li><span className="font-medium">Insufficient funds:</span> Check account balance</li>
+            </ul>
+          </div>
+          <div className="bg-blue-50 p-3 rounded-lg mb-4">
+            <p className="text-xs text-blue-800">
+              💡 <span className="font-medium">Tip:</span> Try different UPI ID or contact your bank for transaction limits
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleRetryPayment}>
+              Try Again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            {isMobile ? <Smartphone className="mr-2 h-5 w-5" /> : <Monitor className="mr-2 h-5 w-5" />}
+            UPI Payment {isMobile ? "(Mobile)" : "(Desktop)"}
+          </CardTitle>
+          <CardDescription>
+            {isMobile 
+              ? "Your UPI app will open automatically for payment" 
+              : "Scan QR code or use manual payment details"
+            }
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-semibold mb-2">Payment Details</h4>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span>Amount:</span>
+                <span className="font-semibold">₹{amount}</span>
               </div>
+              <div className="flex justify-between">
+                <span>Movie:</span>
+                <span>{movieTitle}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>UPI ID:</span>
+                <span className="font-mono break-all">{customUpiId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Reference:</span>
+                <span className="font-mono text-xs">{transactionRef}</span>
+              </div>
+            </div>
+          </div>
+
+          {showCustomUpi && (
+            <div>
+              <Label htmlFor="customUpi">Recipient UPI ID</Label>
+              <Input
+                id="customUpi"
+                value={customUpiId}
+                onChange={(e) => setCustomUpiId(e.target.value)}
+                placeholder="user@paytm"
+                className={upiValidationError ? "border-red-500" : ""}
+              />
+              {upiValidationError && (
+                <p className="text-red-500 text-xs mt-1">{upiValidationError}</p>
+              )}
             </div>
           )}
 
           <div className="space-y-3">
-            {currentError?.type === "BANK_LIMIT" && (
-              <Button 
-                onClick={handleRetryWithSmallerAmount}
-                className="w-full bg-orange-600 hover:bg-orange-700"
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Try with Smaller Amount
-              </Button>
-            )}
-
-            {currentError?.retryable && retryCount < MAX_RETRIES && (
-              <Button 
-                onClick={handleRetry}
-                className="w-full bg-blue-600 hover:bg-blue-700"
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Try Again ({MAX_RETRIES - retryCount} attempts left)
-              </Button>
-            )}
-
-            <Button variant="outline" onClick={onCancel} className="w-full">
-              Cancel Booking
+            <Button 
+              onClick={handlePayment}
+              className="w-full bg-purple-600 hover:bg-purple-700"
+              disabled={paymentStatus === "processing" || !!upiValidationError}
+            >
+              {paymentStatus === "processing" ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {isMobile ? "Opening UPI App..." : "Generating QR Code..."}
+                </>
+              ) : (
+                <>
+                  {isMobile ? <Smartphone className="mr-2 h-4 w-4" /> : <QrCode className="mr-2 h-4 w-4" />}
+                  Pay ₹{amount} via UPI
+                </>
+              )}
             </Button>
-          </div>
 
-          <div className="mt-4 text-xs text-gray-500">
-            <p>Need help? Contact support with Booking ID: {bookingId || "N/A"}</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Verifying state
-  if (paymentStatus === "verifying") {
-    return (
-      <Card className="text-center">
-        <CardContent className="pt-6">
-          <Loader2 className="h-16 w-16 text-blue-500 mx-auto mb-4 animate-spin" />
-          <h3 className="text-xl font-semibold text-blue-600 mb-2">Verifying Payment</h3>
-          <p className="text-gray-600 mb-4">Please wait while we verify your payment...</p>
-          
-          <div className="bg-blue-50 p-4 rounded-lg mb-4">
-            <div className="flex items-center justify-center mb-2">
-              <Info className="h-4 w-4 text-blue-500 mr-2" />
-              <span className="text-sm font-medium text-blue-700">Payment Verification</span>
-            </div>
-            <p className="text-xs text-blue-600">
-              This may take a few moments. Please dont close this window.
-            </p>
-          </div>
-
-          <Button 
-            onClick={handleManualVerification}
-            variant="outline"
-            className="w-full"
-          >
-            Ive Completed Payment
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Main payment form
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          <CreditCard className="mr-2 h-5 w-5" />
-          Secure UPI Payment
-        </CardTitle>
-        <CardDescription>
-          Complete your payment using any UPI app
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Security notice */}
-        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-          <div className="flex items-center">
-            <Shield className="h-4 w-4 text-green-600 mr-2" />
-            <span className="text-sm font-medium text-green-700">Secure Payment</span>
-          </div>
-          <p className="text-xs text-green-600 mt-1">
-            Your payment information is encrypted and secure
-          </p>
-        </div>
-
-        {/* Payment details */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="font-semibold mb-2">Payment Details</h4>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span>Amount:</span>
-              <span className="font-semibold">{formatCurrency(amount)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Movie:</span>
-              <span>{movieTitle}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>UPI ID:</span>
-              <span className="font-mono">{customUpiId}</span>
-            </div>
-            {bookingId && (
-              <div className="flex justify-between">
-                <span>Booking ID:</span>
-                <span className="font-mono text-xs">{bookingId}</span>
+            {paymentStatus === "processing" && (
+              <div className="text-center space-y-3">
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <p className="text-sm text-blue-800 font-medium mb-2">
+                    ✨ Payment Details:
+                  </p>
+                  <div className="text-xs text-blue-700 space-y-1">
+                    <p>• Amount: ₹{amount.toFixed(2)}</p>
+                    <p>• To: Compere Movies</p>
+                    <p>• UPI ID: {customUpiId}</p>
+                    <p>• Reference: {transactionRef}</p>
+                  </div>
+                </div>
+                
+                {isMobile ? (
+                  <div className="text-sm text-gray-600">
+                    <p className="mb-2">If your UPI app didn&apos;t open automatically:</p>
+                    <ol className="list-decimal list-inside text-left space-y-1">
+                      <li>Open any UPI app (GPay, PhonePe, Paytm, BHIM)</li>
+                      <li>Send money to: <span className="font-mono">{customUpiId}</span></li>
+                      <li>Amount: ₹{amount.toFixed(2)}</li>
+                      <li>Add reference: <span className="font-mono">{transactionRef}</span></li>
+                    </ol>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-600">
+                    <p>Scan the QR code with any UPI app or use the manual details above.</p>
+                  </div>
+                )}
+                
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={copyTransactionDetails}
+                    className="flex-1"
+                  >
+                    <Copy className="mr-1 h-3 w-3" />
+                    Copy Details
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleManualVerification}
+                    className="flex-1"
+                  >
+                    <CheckCircle className="mr-1 h-3 w-3" />
+                    Payment Done
+                  </Button>
+                </div>
               </div>
             )}
+
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowCustomUpi(!showCustomUpi)}
+                className="flex-1"
+                size="sm"
+              >
+                {showCustomUpi ? "Hide" : "Change"} UPI ID
+              </Button>
+
+              <Button 
+                variant="outline" 
+                onClick={onCancel}
+                className="flex-1"
+                size="sm"
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {/* Custom UPI ID input */}
-        {showCustomUpi && (
-          <div>
-            <Label htmlFor="customUpi">Custom UPI ID</Label>
-            <Input
-              id="customUpi"
-              value={customUpiId}
-              onChange={(e) => setCustomUpiId(e.target.value)}
-              placeholder="your-upi-id@bank"
-              className={!validateUpiId(customUpiId) && customUpiId ? "border-red-300" : ""}
-            />
-            {!validateUpiId(customUpiId) && customUpiId && (
-              <p className="text-xs text-red-500 mt-1">Please enter a valid UPI ID format</p>
-            )}
+          <div className="text-xs text-gray-500 text-center space-y-1">
+            <p>✅ Supported: Google Pay, PhonePe, Paytm, BHIM, and all UPI apps</p>
+            <p>🔒 Secure payment via UPI specification standards</p>
+            {!isMobile && <p>📱 Works better on mobile devices</p>}
           </div>
-        )}
+        </CardContent>
+      </Card>
 
-        {/* Action buttons */}
-        <div className="space-y-3">
-          <Button 
-            onClick={handlePayment}
-            className="w-full bg-purple-600 hover:bg-purple-700"
-            disabled={paymentStatus === "processing" || !validateUpiId(customUpiId)}
-          >
-            {paymentStatus === "processing" ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Opening UPI App...
-              </>
-            ) : (
-              <>
-                <CreditCard className="mr-2 h-4 w-4" />
-                Pay {formatCurrency(amount)}
-              </>
-            )}
-          </Button>
+      {/* QR Code Dialog for Desktop */}
+      <Dialog open={showQRDialog} onOpenChange={setShowQRDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center">Scan QR Code to Pay</DialogTitle>
+          </DialogHeader>
+          <div className="text-center space-y-4">
+            <div className="bg-white p-4 rounded-lg border mx-auto inline-block">
+              <div className="w-48 h-48 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img 
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(generateUPILink(customUpiId, amount, "Compere Movies", `${movieTitle} - Movie Booking`, transactionRef))}`}
+                  alt="UPI Payment QR Code"
+                  className="w-full h-full object-contain"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const fallback = target.nextElementSibling as HTMLElement;
+                    if (fallback) fallback.style.display = 'block';
+                  }}
+                />
+                <div className="text-center hidden">
+                  <QrCode className="h-16 w-16 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm text-gray-600">QR Code</p>
+                  <p className="text-xs text-gray-500 mt-1">₹{amount}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="text-sm text-gray-600 space-y-2">
+              <p className="font-medium">How to pay:</p>
+              <ol className="list-decimal list-inside text-left space-y-1">
+                <li>Open any UPI app on your phone</li>
+                <li>Scan the QR code above</li>
+                <li>Verify amount: ₹{amount}</li>
+                <li>Complete the payment</li>
+              </ol>
+            </div>
 
-          <Button 
-            variant="outline" 
-            onClick={() => setShowCustomUpi(!showCustomUpi)}
-            className="w-full"
-            size="sm"
-          >
-            {showCustomUpi ? "Hide" : "Change"} UPI ID
-          </Button>
+            <div className="bg-gray-50 p-3 rounded-lg text-left">
+              <p className="text-xs font-medium text-gray-700 mb-1">Manual Payment Details:</p>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>UPI ID: <span className="font-mono">{customUpiId}</span></p>
+                <p>Amount: ₹{amount.toFixed(2)}</p>
+                <p>Reference: <span className="font-mono">{transactionRef}</span></p>
+              </div>
+            </div>
 
-          <Button 
-            variant="outline" 
-            onClick={onCancel}
-            className="w-full"
-            size="sm"
-          >
-            Cancel
-          </Button>
-        </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={copyUpiLink}
+                className="flex-1"
+              >
+                <Copy className="mr-1 h-3 w-3" />
+                Copy UPI Link
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleManualVerification}
+                className="flex-1"
+              >
+                <CheckCircle className="mr-1 h-3 w-3" />
+                Payment Done
+              </Button>
+            </div>
 
-        {/* Help text */}
-        <div className="text-xs text-gray-500 text-center space-y-1">
-          <p>Supported UPI apps: Google Pay, PhonePe, Paytm, BHIM, etc.</p>
-          <p>Make sure you have a UPI app installed on your device.</p>
-          <p>If you encounter bank limit errors, try with a smaller amount.</p>
-        </div>
-      </CardContent>
-    </Card>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowQRDialog(false)}
+              className="w-full"
+              size="sm"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
