@@ -12,6 +12,10 @@ import {
   generateTransactionRef,
   isMobileDevice,
   launchUpiApp,
+  validateAmount,
+  suggestPaymentSplit,
+  createTestPayment,
+  UPI_LIMITS,
 } from "@/lib/upi-utils";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -34,14 +38,43 @@ export function PaymentHandler({
 }: PaymentHandlerProps) {
   const [transactionRef] = useState(() => generateTransactionRef());
   const [paymentAttempts, setPaymentAttempts] = useState(0);
+  const [showAmountError, setShowAmountError] = useState(false);
+  const [suggestedAmount, setSuggestedAmount] = useState<number | null>(null);
+  const [, setShowTestPayment] = useState(false);
   
   const updateBookingStatus = useMutation(api.bookings.updatePaymentStatus);
 
-  const handlePayNow = async () => {
+  // Check if amount exceeds limits on component mount
+  useState(() => {
+    const validation = validateAmount(amount);
+    if (!validation.isValid && validation.errorType === 'MAX') {
+      setShowAmountError(true);
+      setSuggestedAmount(validation.suggestedAmount || null);
+    }
+  });
+
+  const handlePayNow = async (customAmount?: number) => {
+    const paymentAmount = customAmount || amount;
+    
     try {
+      // Validate amount first
+      const validation = validateAmount(paymentAmount);
+      if (!validation.isValid) {
+        toast.error("Amount validation failed", {
+          description: validation.error,
+          duration: 8000,
+        });
+        
+        if (validation.suggestedAmount) {
+          setSuggestedAmount(validation.suggestedAmount);
+          setShowAmountError(true);
+        }
+        return;
+      }
+
       const upiLink = generateUPILink(
         upiId,
-        amount,
+        paymentAmount,
         "Compere Movies",
         `${movieTitle} - Movie Booking`,
         transactionRef
@@ -54,7 +87,7 @@ export function PaymentHandler({
         const success = await launchUpiApp(upiLink);
         if (success) {
           toast.success("Opening UPI app...", {
-            description: "Complete the payment in your UPI app and return here.",
+            description: `Complete payment of ₹${paymentAmount} and return here.`,
             duration: 8000,
           });
         } else {
@@ -68,7 +101,7 @@ export function PaymentHandler({
         try {
           await navigator.clipboard.writeText(upiLink);
           toast.success("UPI payment link copied!", {
-            description: "Paste this link in your mobile browser or send to your phone.",
+            description: `Paste this link on your mobile device to pay ₹${paymentAmount}.`,
             duration: 10000,
           });
         } catch (error) {
@@ -85,10 +118,11 @@ export function PaymentHandler({
       console.error("Payment error:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes("limit") || errorMessage.includes("exceeded")) {
-        toast.error("Bank limit reached", {
-          description: "Try with smaller amount, different account, or wait 24 hours.",
+        toast.error("Amount exceeds bank limits", {
+          description: `Try with ₹${UPI_LIMITS.MAX_AMOUNT} or less, or split into multiple payments.`,
           duration: 10000,
         });
+        setShowAmountError(true);
       } else if (errorMessage.includes("Invalid UPI ID")) {
         toast.error("Invalid payment configuration", {
           description: "Please contact support for assistance.",
@@ -114,6 +148,32 @@ export function PaymentHandler({
     } catch (error) {
       console.error("Error updating booking:", error);
       toast.error("Error confirming booking. Please contact support.");
+    }
+  };
+
+  const handleTestPayment = async () => {
+    try {
+      const testPayment = createTestPayment(upiId);
+      
+      if (isMobileDevice()) {
+        const success = await launchUpiApp(testPayment.upiLink);
+        if (success) {
+          toast.success("Opening UPI app for ₹1 test...", {
+            description: "This will verify your UPI setup. Complete the ₹1 payment to test.",
+            duration: 8000,
+          });
+          setShowTestPayment(true);
+        }
+      } else {
+        await navigator.clipboard.writeText(testPayment.upiLink);
+        toast.success("₹1 test payment link copied!", {
+          description: "Use this on your mobile device to test UPI setup.",
+          duration: 8000,
+        });
+      }
+    } catch (error) {
+      console.error("Test payment error:", error);
+      toast.error("Failed to create test payment");
     }
   };
 
@@ -144,13 +204,60 @@ Description: ${movieTitle} - Movie Booking`;
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Amount Warning */}
+        {showAmountError && (
+          <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
+            <h4 className="font-semibold text-red-800 mb-2">⚠️ Amount Exceeds Bank Limits</h4>
+            <p className="text-sm text-red-700 mb-3">
+              ₹{amount} exceeds the safe UPI limit of ₹{UPI_LIMITS.MAX_AMOUNT}. This may cause &quot;bank limit exceeded&quot; errors.
+            </p>
+            <div className="space-y-2">
+              {suggestedAmount && (
+                <Button
+                  onClick={() => handlePayNow(suggestedAmount)}
+                  className="w-full bg-orange-600 hover:bg-orange-700"
+                  size="sm"
+                >
+                  Pay Safe Amount: ₹{suggestedAmount}
+                </Button>
+              )}
+              <Button
+                onClick={handleTestPayment}
+                variant="outline"
+                className="w-full"
+                size="sm"
+              >
+                🧪 Test UPI with ₹1 First
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Payment Split Suggestion */}
+        {amount > UPI_LIMITS.MAX_AMOUNT && (
+          <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+            <h4 className="font-semibold text-blue-800 mb-2">💡 Payment Split Suggestion</h4>
+            <p className="text-sm text-blue-700 mb-2">
+              {suggestPaymentSplit(amount).message}
+            </p>
+            <p className="text-xs text-blue-600">
+              You can pay each amount separately to avoid bank limits.
+            </p>
+          </div>
+        )}
+
         {/* Payment Details */}
         <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-lg border">
           <h4 className="font-semibold mb-3 text-gray-800">Payment Details</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-600">Amount:</span>
-              <span className="font-bold text-lg text-green-600">₹{amount}</span>
+              <span className={`font-bold text-lg ${amount > UPI_LIMITS.MAX_AMOUNT ? 'text-red-600' : 'text-green-600'}`}>
+                ₹{amount}
+                {amount > UPI_LIMITS.MAX_AMOUNT && (
+                  <span className="text-xs text-red-500 ml-2">(Exceeds limit)</span>
+                )}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">Movie:</span>
@@ -170,7 +277,7 @@ Description: ${movieTitle} - Movie Booking`;
         {/* Payment Actions */}
         <div className="space-y-3">
           <Button 
-            onClick={handlePayNow}
+            onClick={() => handlePayNow()}
             className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-3"
             size="lg"
           >
@@ -196,7 +303,7 @@ Description: ${movieTitle} - Movie Booking`;
           </Button>
 
           <Button 
-            onClick={handlePayNow}
+            onClick={() => handlePayNow()}
             variant="outline"
             className="w-full"
           >
@@ -234,7 +341,13 @@ Description: ${movieTitle} - Movie Booking`;
         <div className="text-xs text-gray-500 text-center space-y-1 pt-2 border-t">
           <p>✅ Supported: Google Pay, PhonePe, Paytm, BHIM, and all UPI apps</p>
           <p>🔒 Secure payment via UPI standards</p>
+          <p>⚡ Safe limit: ₹{UPI_LIMITS.MAX_AMOUNT} per transaction</p>
           <p>💡 Having issues? Contact support with reference: {transactionRef}</p>
+          {paymentAttempts > 2 && (
+            <p className="text-orange-600 font-medium">
+              🚨 Multiple attempts detected. Try ₹1 test payment first.
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

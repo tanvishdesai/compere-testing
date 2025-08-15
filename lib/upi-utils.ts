@@ -6,11 +6,14 @@
 // UPI ID validation regex as per NPCI guidelines
 export const UPI_ID_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
 
-// UPI payment limits
+// UPI payment limits - Conservative limits to avoid bank rejections
 export const UPI_LIMITS = {
   MIN_AMOUNT: 1,
-  MAX_AMOUNT: 100000, // ₹1 lakh per transaction
-  MAX_DAILY_AMOUNT: 1000000, // ₹10 lakh per day
+  MAX_AMOUNT: 5000, // ₹5,000 per transaction (safe limit for most banks)
+  MAX_DAILY_AMOUNT: 2500, // ₹25,000 per day (conservative daily limit)
+  // Higher limits for advanced users (can be enabled later)
+  ADVANCED_MAX_AMOUNT: 50000, // ₹50,000 per transaction
+  ADVANCED_MAX_DAILY_AMOUNT: 100000, // ₹1 lakh per day
 } as const;
 
 // Popular UPI PSPs (Payment Service Providers)
@@ -34,19 +37,38 @@ export function validateUpiId(upiId: string): boolean {
 }
 
 /**
- * Validates payment amount
+ * Validates payment amount with detailed error messages
  */
-export function validateAmount(amount: number): { isValid: boolean; error?: string } {
+export function validateAmount(amount: number, useAdvancedLimits = false): { 
+  isValid: boolean; 
+  error?: string; 
+  suggestedAmount?: number;
+  errorType?: 'MIN' | 'MAX' | 'INVALID';
+} {
   if (typeof amount !== 'number' || isNaN(amount)) {
-    return { isValid: false, error: 'Amount must be a valid number' };
+    return { isValid: false, error: 'Amount must be a valid number', errorType: 'INVALID' };
   }
   
   if (amount < UPI_LIMITS.MIN_AMOUNT) {
-    return { isValid: false, error: `Minimum amount is ₹${UPI_LIMITS.MIN_AMOUNT}` };
+    return { 
+      isValid: false, 
+      error: `Minimum amount is ₹${UPI_LIMITS.MIN_AMOUNT}`, 
+      suggestedAmount: UPI_LIMITS.MIN_AMOUNT,
+      errorType: 'MIN'
+    };
   }
   
-  if (amount > UPI_LIMITS.MAX_AMOUNT) {
-    return { isValid: false, error: `Maximum amount is ₹${UPI_LIMITS.MAX_AMOUNT.toLocaleString()}` };
+  const maxLimit = useAdvancedLimits ? UPI_LIMITS.ADVANCED_MAX_AMOUNT : UPI_LIMITS.MAX_AMOUNT;
+  
+  if (amount > maxLimit) {
+    // Suggest breaking into smaller payments
+    const suggestedAmount = Math.floor(maxLimit * 0.9); // 90% of max limit for safety
+    return { 
+      isValid: false, 
+      error: `Amount exceeds bank limit of ₹${maxLimit.toLocaleString()}. Try ₹${suggestedAmount.toLocaleString()} or split into multiple payments.`, 
+      suggestedAmount,
+      errorType: 'MAX'
+    };
   }
   
   return { isValid: true };
@@ -134,6 +156,59 @@ export function launchUpiApp(upiLink: string): Promise<boolean> {
       resolve(false);
     }
   });
+}
+
+/**
+ * Suggests how to split large payments into smaller amounts
+ */
+export function suggestPaymentSplit(totalAmount: number, maxAmount = UPI_LIMITS.MAX_AMOUNT): {
+  canSplit: boolean;
+  splits: number[];
+  message: string;
+} {
+  if (totalAmount <= maxAmount) {
+    return {
+      canSplit: false,
+      splits: [totalAmount],
+      message: `Amount ₹${totalAmount} is within limits`
+    };
+  }
+
+  const numberOfPayments = Math.ceil(totalAmount / maxAmount);
+  const baseAmount = Math.floor(totalAmount / numberOfPayments);
+  const remainder = totalAmount % numberOfPayments;
+
+  const splits: number[] = [];
+  for (let i = 0; i < numberOfPayments; i++) {
+    splits.push(i < remainder ? baseAmount + 1 : baseAmount);
+  }
+
+  return {
+    canSplit: true,
+    splits,
+    message: `Split ₹${totalAmount} into ${numberOfPayments} payments: ${splits.map(amt => `₹${amt}`).join(', ')}`
+  };
+}
+
+/**
+ * Creates a test payment with a small amount to verify UPI setup
+ */
+export function createTestPayment(upiId: string): {
+  amount: number;
+  description: string;
+  upiLink: string;
+} {
+  const testAmount = 1; // ₹1 test payment
+  const description = "Test Payment - UPI Setup Verification";
+  const transactionRef = `TEST${Date.now()}`;
+  
+  const upiLink = generateUPILink(upiId, testAmount, "Compere Movies", description, transactionRef);
+  
+  return {
+    amount: testAmount,
+    description,
+    upiLink
+  };
 }
 
 /**
