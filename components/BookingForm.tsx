@@ -113,6 +113,7 @@ export function BookingForm({ screening, movie, numberOfTickets, totalAmount, on
         onSuccess={handlePaymentSuccess}
         onCancel={handlePaymentCancel}
         upiId="tanvishdesai.05@oksbi"
+        bookingId={bookingId || undefined}
       />
     );
   }
