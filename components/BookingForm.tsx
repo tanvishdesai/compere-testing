@@ -73,20 +73,10 @@ export function BookingForm({ screening, movie, numberOfTickets, totalAmount, on
   };
 
   const handlePaymentSuccess = async () => {
-    if (bookingId) {
-      try {
-        await updateBooking({
-          id: bookingId,
-          paymentStatus: "COMPLETED",
-          paymentId: `upi_${Date.now()}`,
-        });
-        toast.success("Payment confirmed! Your booking is complete.");
-        onCancel();
-      } catch (error) {
-        console.error("Error updating booking:", error);
-        toast.error("Error confirming payment. Please contact support.");
-      }
-    }
+    // In the new system, payment success means screenshot was uploaded
+    // and is pending verification, so we just close the modal
+    toast.success("Payment submitted for verification!");
+    onCancel();
   };
 
   const handlePaymentCancel = async () => {
@@ -105,11 +95,12 @@ export function BookingForm({ screening, movie, numberOfTickets, totalAmount, on
     }
   };
 
-  if (showPayment) {
+  if (showPayment && bookingId) {
     return (
       <PaymentHandler
         amount={totalAmount}
         movieTitle={movie.title}
+        bookingId={bookingId}
         onSuccess={handlePaymentSuccess}
         onCancel={handlePaymentCancel}
         upiId="tanvishdesai.05@oksbi"

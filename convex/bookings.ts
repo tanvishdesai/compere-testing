@@ -11,6 +11,11 @@ export const create = mutation({
     totalAmount: v.number(),
     paymentStatus: v.string(),
     paymentId: v.optional(v.string()),
+    paymentScreenshotUrl: v.optional(v.string()),
+    verificationStatus: v.optional(v.string()),
+    adminNotes: v.optional(v.string()),
+    verifiedBy: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
   },
   returns: v.id("bookings"),
   handler: async (ctx, args) => {
@@ -32,6 +37,11 @@ export const list = query({
     totalAmount: v.number(),
     paymentStatus: v.string(),
     paymentId: v.optional(v.string()),
+    paymentScreenshotUrl: v.optional(v.string()),
+    verificationStatus: v.optional(v.string()),
+    adminNotes: v.optional(v.string()),
+    verifiedBy: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
   })),
   handler: async (ctx, args) => {
     const bookings = await ctx.db.query("bookings").order("desc").collect();
@@ -52,6 +62,11 @@ export const listByScreening = query({
     totalAmount: v.number(),
     paymentStatus: v.string(),
     paymentId: v.optional(v.string()),
+    paymentScreenshotUrl: v.optional(v.string()),
+    verificationStatus: v.optional(v.string()),
+    adminNotes: v.optional(v.string()),
+    verifiedBy: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
   })),
   handler: async (ctx, args) => {
     const bookings = await ctx.db
@@ -75,6 +90,11 @@ export const listByPaymentStatus = query({
     totalAmount: v.number(),
     paymentStatus: v.string(),
     paymentId: v.optional(v.string()),
+    paymentScreenshotUrl: v.optional(v.string()),
+    verificationStatus: v.optional(v.string()),
+    adminNotes: v.optional(v.string()),
+    verifiedBy: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
   })),
   handler: async (ctx, args) => {
     const bookings = await ctx.db
@@ -99,6 +119,11 @@ export const get = query({
       totalAmount: v.number(),
       paymentStatus: v.string(),
       paymentId: v.optional(v.string()),
+      paymentScreenshotUrl: v.optional(v.string()),
+      verificationStatus: v.optional(v.string()),
+      adminNotes: v.optional(v.string()),
+      verifiedBy: v.optional(v.string()),
+      verifiedAt: v.optional(v.number()),
     }),
     v.null()
   ),
@@ -119,6 +144,11 @@ export const update = mutation({
     totalAmount: v.optional(v.number()),
     paymentStatus: v.optional(v.string()),
     paymentId: v.optional(v.string()),
+    paymentScreenshotUrl: v.optional(v.string()),
+    verificationStatus: v.optional(v.string()),
+    adminNotes: v.optional(v.string()),
+    verifiedBy: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -148,5 +178,76 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     await ctx.db.delete(args.id);
     return null;
+  },
+});
+
+// New mutations for payment verification workflow
+
+export const uploadPaymentScreenshot = mutation({
+  args: {
+    id: v.id("bookings"),
+    paymentScreenshotUrl: v.string(),
+    paymentId: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { id, paymentScreenshotUrl, paymentId } = args;
+    await ctx.db.patch(id, { 
+      paymentScreenshotUrl, 
+      paymentStatus: "PENDING_VERIFICATION",
+      verificationStatus: "PENDING",
+      paymentId: paymentId || `upi_${Date.now()}`,
+    });
+    return null;
+  },
+});
+
+export const verifyPayment = mutation({
+  args: {
+    id: v.id("bookings"),
+    approved: v.boolean(),
+    adminNotes: v.optional(v.string()),
+    verifiedBy: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { id, approved, adminNotes, verifiedBy } = args;
+    await ctx.db.patch(id, {
+      paymentStatus: approved ? "VERIFIED" : "REJECTED",
+      verificationStatus: approved ? "APPROVED" : "REJECTED",
+      adminNotes,
+      verifiedBy,
+      verifiedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+export const listPendingVerifications = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("bookings"),
+    _creationTime: v.number(),
+    screeningId: v.id("screenings"),
+    customerName: v.string(),
+    customerEmail: v.optional(v.string()),
+    customerPhone: v.optional(v.string()),
+    numberOfTickets: v.number(),
+    totalAmount: v.number(),
+    paymentStatus: v.string(),
+    paymentId: v.optional(v.string()),
+    paymentScreenshotUrl: v.optional(v.string()),
+    verificationStatus: v.optional(v.string()),
+    adminNotes: v.optional(v.string()),
+    verifiedBy: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
+  })),
+  handler: async (ctx, args) => {
+    const bookings = await ctx.db
+      .query("bookings")
+      .withIndex("by_verification_status", (q) => q.eq("verificationStatus", "PENDING"))
+      .order("desc")
+      .collect();
+    return bookings;
   },
 });

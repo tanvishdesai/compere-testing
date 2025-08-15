@@ -34,11 +34,17 @@ export default defineSchema({
     customerPhone: v.optional(v.string()),
     numberOfTickets: v.number(),
     totalAmount: v.number(),
-    paymentStatus: v.string(), // "PENDING", "COMPLETED", "FAILED", "CANCELLED"
+    paymentStatus: v.string(), // "PENDING", "PENDING_VERIFICATION", "VERIFIED", "REJECTED", "CANCELLED"
     paymentId: v.optional(v.string()),
+    paymentScreenshotUrl: v.optional(v.string()),
+    verificationStatus: v.optional(v.string()), // "PENDING", "APPROVED", "REJECTED"
+    adminNotes: v.optional(v.string()),
+    verifiedBy: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
   })
     .index("by_screening", ["screeningId"])
-    .index("by_payment_status", ["paymentStatus"]),
+    .index("by_payment_status", ["paymentStatus"])
+    .index("by_verification_status", ["verificationStatus"]),
 
   movieImages: defineTable({
     movieId: v.id("movies"),
