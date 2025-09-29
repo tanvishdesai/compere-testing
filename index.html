@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SatAgriCare SMS Notification</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for mobile phone appearance */
+        .phone-container {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .message-bubble {
+            background: #f1f5f9;
+            border-radius: 18px 18px 4px 18px;
+        }
+        .sender-bubble {
+            background: #3b82f6;
+            border-radius: 18px 18px 18px 4px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <!-- Phone Container -->
+    <div class="phone-container w-full max-w-sm mx-auto rounded-3xl p-2 shadow-2xl">
+        <!-- Phone Screen -->
+        <div class="bg-black rounded-2xl p-1">
+            <div class="bg-white rounded-xl overflow-hidden">
+                <!-- Status Bar -->
+                <div class="bg-gray-900 text-white px-4 py-2 flex justify-between items-center text-xs">
+                    <div class="flex items-center space-x-1">
+                        <div class="w-1 h-1 bg-white rounded-full"></div>
+                        <div class="w-2 h-1 bg-white rounded-full"></div>
+                        <div class="w-3 h-1 bg-white rounded-full"></div>
+                        <span class="ml-2">Airtel</span>
+                    </div>
+                    <div class="flex items-center space-x-1">
+                        <span>9:41</span>
+                        <div class="w-6 h-3 border border-white rounded-sm">
+                            <div class="w-4 h-2 bg-white rounded-sm m-0.5"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Message Header -->
+                <div class="bg-blue-600 text-white px-4 py-3 flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                        <span class="text-white text-sm font-bold">S</span>
+                    </div>
+                    <div class="flex-1">
+                        <h2 class="font-semibold text-sm">SatAgriCare</h2>
+                        <p class="text-xs text-blue-100">Agricultural Monitoring</p>
+                    </div>
+                    <div class="text-xs text-blue-100">Now</div>
+                </div>
+
+                <!-- Messages Container -->
+                <div class="bg-gray-50 min-h-96 p-4 space-y-4">
+                    <!-- Language Selector -->
+                    <div class="flex justify-center mb-4">
+                        <div class="bg-white rounded-full p-1 shadow-sm">
+                            <button id="gujarati-btn" class="px-3 py-1 text-xs rounded-full bg-blue-500 text-white">ગુજરાતી</button>
+                            <button id="hindi-btn" class="px-3 py-1 text-xs rounded-full text-gray-600 hover:bg-gray-100">हिंदी</button>
+                            <button id="english-btn" class="px-3 py-1 text-xs rounded-full text-gray-600 hover:bg-gray-100">English</button>
+                        </div>
+                    </div>
+
+                    <!-- Message Bubbles -->
+                    <div class="space-y-3">
+                        <!-- Gujarati Message -->
+                        <div id="gujarati-msg" class="flex items-start space-x-2">
+                            <div class="w-3 h-3 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+                            <div class="message-bubble p-3 max-w-xs shadow-sm">
+                                <p class="text-sm text-gray-800 leading-relaxed">તમારા ખેતરમાં એક ખૂણામાં છોડ નબળા દેખાય છે. સિંચાઈ ચકાસો.</p>
+                                <p class="text-xs text-gray-500 mt-2">9:41 AM</p>
+                            </div>
+                        </div>
+
+                        <!-- Hindi Message -->
+                        <div id="hindi-msg" class="flex items-start space-x-2 hidden">
+                            <div class="w-3 h-3 bg-orange-400 rounded-full mt-2 flex-shrink-0"></div>
+                            <div class="message-bubble p-3 max-w-xs shadow-sm">
+                                <p class="text-sm text-gray-800 leading-relaxed">आपकी फसल के एक हिस्से में पौधे कमजोर दिख रहे हैं। सिंचाई जांचें।</p>
+                                <p class="text-xs text-gray-500 mt-2">9:41 AM</p>
+                            </div>
+                        </div>
+
+                        <!-- English Message -->
+                        <div id="english-msg" class="flex items-start space-x-2 hidden">
+                            <div class="w-3 h-3 bg-red-400 rounded-full mt-2 flex-shrink-0"></div>
+                            <div class="message-bubble p-3 max-w-xs shadow-sm">
+                                <p class="text-sm text-gray-800 leading-relaxed">A section of your field shows crop stress. Please check irrigation.</p>
+                                <p class="text-xs text-gray-500 mt-2">9:41 AM</p>
+                            </div>
+                        </div>
+
+                        <!-- System Message -->
+                        <div class="flex justify-center">
+                            <div class="bg-gray-200 px-3 py-1 rounded-full">
+                                <p class="text-xs text-gray-600">Alert sent via satellite monitoring</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reply Options -->
+                    <div class="bg-white rounded-xl p-4 shadow-sm border-t border-gray-200 mt-6">
+                        <p class="text-xs text-gray-600 mb-3 text-center">Quick Response</p>
+                        <div class="flex space-x-3">
+                            <button class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 transition-colors">
+                                <span>✅</span>
+                                <span>Confirm</span>
+                            </button>
+                            <button class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg text-sm font-medium flex items-center justify-center space-x-2 transition-colors">
+                                <span>❌</span>
+                                <span>Not Correct</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Additional Options -->
+                        <div class="mt-3 pt-3 border-t border-gray-100">
+                            <button class="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 py-2 px-4 rounded-lg text-sm font-medium transition-colors">
+                                📞 Call Support
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Area -->
+                <div class="bg-white border-t border-gray-200 p-3">
+                    <div class="flex items-center space-x-2">
+                        <div class="flex-1 bg-gray-100 rounded-full px-4 py-2">
+                            <input type="text" placeholder="Type a message..." class="w-full bg-transparent text-sm outline-none">
+                        </div>
+                        <button class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                            <span class="text-white text-sm">→</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Language switching functionality
+        const gujaratiBtn = document.getElementById('gujarati-btn');
+        const hindiBtn = document.getElementById('hindi-btn');
+        const englishBtn = document.getElementById('english-btn');
+        
+        const gujaratiMsg = document.getElementById('gujarati-msg');
+        const hindiMsg = document.getElementById('hindi-msg');
+        const englishMsg = document.getElementById('english-msg');
+
+        function switchLanguage(activeBtn, activeMsg, buttons, messages) {
+            // Reset all buttons
+            buttons.forEach(btn => {
+                btn.classList.remove('bg-blue-500', 'text-white');
+                btn.classList.add('text-gray-600', 'hover:bg-gray-100');
+            });
+            
+            // Hide all messages
+            messages.forEach(msg => msg.classList.add('hidden'));
+            
+            // Activate selected
+            activeBtn.classList.add('bg-blue-500', 'text-white');
+            activeBtn.classList.remove('text-gray-600', 'hover:bg-gray-100');
+            activeMsg.classList.remove('hidden');
+        }
+
+        gujaratiBtn.addEventListener('click', () => {
+            switchLanguage(gujaratiBtn, gujaratiMsg, [gujaratiBtn, hindiBtn, englishBtn], [gujaratiMsg, hindiMsg, englishMsg]);
+        });
+
+        hindiBtn.addEventListener('click', () => {
+            switchLanguage(hindiBtn, hindiMsg, [gujaratiBtn, hindiBtn, englishBtn], [gujaratiMsg, hindiMsg, englishMsg]);
+        });
+
+        englishBtn.addEventListener('click', () => {
+            switchLanguage(englishBtn, englishMsg, [gujaratiBtn, hindiBtn, englishBtn], [gujaratiMsg, hindiMsg, englishMsg]);
+        });
+
+        // Add click animations to buttons
+        document.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', function() {
+                this.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    this.style.transform = 'scale(1)';
+                }, 150);
+            });
+        });
+    </script>
+</body>
+</html>
